@@ -1,0 +1,2206 @@
+
+##############################
+# gui.py
+##############################
+
+import tkinter as tk
+import pickle
+from tkinter import ttk, messagebox, simpledialog
+import tkinter.font as tkFont
+from datetime import datetime
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+# Import the database and models
+from database import Database
+from models import User, AdminUser, SingleRaceTicket, WeekendPackageTicket, SeasonMembershipTicket, CreditCardPayment, DigitalWalletPayment, PurchaseOrder
+
+class App(tk.Tk):
+    # Main application class
+    
+    def __init__(self):
+        # Initialize the main application window
+        super().__init__()
+        
+        # Configure the root window
+        self.title("Grand Prix Experience - Ticket Booking System")
+        self.geometry("1200x800")
+        self.minsize(1000, 700)
+        # Set light blue background color
+        self.configure(bg="#e6f2ff")
+        
+        # Initialize the database
+        self.db = Database()
+        
+        # Initialize the current user
+        self.current_user = None
+        
+        # Create frames for different parts of the app
+        self.create_frames()
+        
+        # Show the login frame initially
+        self.show_frame(self.login_frame)
+    
+    def create_frames(self):
+        # Create all the frames for the application
+        
+        # Create a container for all frames
+        self.container = tk.Frame(self)
+        self.container.pack(fill="both", expand=True)
+        self.container.grid_rowconfigure(0, weight=1)
+        self.container.grid_columnconfigure(0, weight=1)
+        
+        # Create login frame
+        self.login_frame = LoginFrame(self.container, self)
+        self.login_frame.grid(row=0, column=0, sticky="nsew")
+        
+        # Create register frame
+        self.register_frame = RegisterFrame(self.container, self)
+        self.register_frame.grid(row=0, column=0, sticky="nsew")
+        
+        # Create user dashboard frame
+        self.user_dashboard = UserDashboard(self.container, self)
+        self.user_dashboard.grid(row=0, column=0, sticky="nsew")
+        
+        # Create admin dashboard frame
+        self.admin_dashboard = AdminDashboard(self.container, self)
+        self.admin_dashboard.grid(row=0, column=0, sticky="nsew")
+        
+        # Create ticket purchase frame
+        self.ticket_purchase = TicketPurchaseFrame(self.container, self)
+        self.ticket_purchase.grid(row=0, column=0, sticky="nsew")
+        
+        # Create payment frame
+        self.payment_frame = PaymentFrame(self.container, self)
+        self.payment_frame.grid(row=0, column=0, sticky="nsew")
+        
+        # Create user profile frame
+        self.profile_frame = ProfileFrame(self.container, self)
+        self.profile_frame.grid(row=0, column=0, sticky="nsew")
+    
+    def show_frame(self, frame):
+        # Raise the specified frame to the top
+        frame.tkraise()
+    
+    def login(self, username, password):
+        # Handle user login
+        user = self.db.get_user(username)
+        
+        if user and user.password == password:
+            self.current_user = user
+            
+            # Check if user is admin
+            if isinstance(user, AdminUser):
+                self.admin_dashboard.update_dashboard()
+                self.show_frame(self.admin_dashboard)
+            else:
+                self.user_dashboard.update_dashboard()
+                self.show_frame(self.user_dashboard)
+            
+            return True
+        else:
+            return False
+    
+    def logout(self):
+        # Handle user logout
+        self.current_user = None
+        self.show_frame(self.login_frame)
+    
+    def register_user(self, username, password, name, email, phone):
+        # Register a new user
+        if self.db.get_user(username):
+            return False, "Username already exists!"
+        
+        # Create new user
+        new_user = User(username, password, name, email, phone)
+        self.db.add_user(new_user)
+        
+        return True, "Registration successful! Please login."
+    
+    def update_user_profile(self, name, email, phone):
+        # Update the current user's profile
+        if self.current_user:
+            self.current_user.name = name
+            self.current_user.email = email
+            self.current_user.phone = phone
+            
+            # Update in database
+            self.db.update_user(self.current_user)
+            return True
+        
+        return False
+
+class BaseFrame(tk.Frame):
+    # Base frame class for common functionality
+    
+    def __init__(self, parent, controller):
+        # Initialize a base frame
+        super().__init__(parent)
+        self.controller = controller
+        
+        # Configure frame styles
+        self.configure(bg="#e6f2ff")
+        
+        # Create common styles
+        self.title_font = tkFont.Font(family="Helvetica", size=18, weight="bold")
+        self.subtitle_font = tkFont.Font(family="Helvetica", size=14, weight="bold")
+        self.button_font = tkFont.Font(family="Helvetica", size=12)
+        self.text_font = tkFont.Font(family="Helvetica", size=12)
+        
+        # Style for all buttons
+        self.button_style = {
+            "bg": "#4da6ff",
+            "fg": "white",
+            "activebackground": "#3385ff",
+            "activeforeground": "white",
+            "font": self.button_font,
+            "padx": 10,
+            "pady": 5,
+            "bd": 0,
+            "relief": tk.RAISED
+        }
+        
+        # Style for entry fields
+        self.entry_style = {
+            "font": self.text_font,
+            "bg": "white",
+            "relief": tk.SUNKEN,
+            "bd": 1
+        }
+    
+    def create_header(self, title):
+        # Create a common header for frames
+        header_frame = tk.Frame(self, bg="#cce6ff", pady=10)
+        header_frame.pack(fill="x")
+        
+        # Add title label
+        title_label = tk.Label(header_frame, text=title, font=self.title_font, bg="#cce6ff")
+        title_label.pack()
+        
+        return header_frame
+    
+    def create_button(self, parent, text, command, **kwargs):
+        # Create a styled button
+        button_config = self.button_style.copy()
+        button_config.update(kwargs)
+        
+        button = tk.Button(parent, text=text, command=command, **button_config)
+        
+        return button
+    
+    def create_entry(self, parent, **kwargs):
+        # Create a styled entry field
+        entry_config = self.entry_style.copy()
+        entry_config.update(kwargs)
+        
+        entry = tk.Entry(parent, **entry_config)
+        
+        return entry
+
+class LoginFrame(BaseFrame):
+    # Login frame class
+    
+    def __init__(self, parent, controller):
+        # Initialize the login frame
+        super().__init__(parent, controller)
+        
+        # Create header
+        self.create_header("Grand Prix Experience - Login")
+        
+        # Create main content frame
+        content_frame = tk.Frame(self, bg="#e6f2ff", padx=20, pady=20)
+        content_frame.pack(expand=True)
+        
+        # Username label and entry
+        username_label = tk.Label(content_frame, text="Username:", font=self.text_font, bg="#e6f2ff")
+        username_label.grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        
+        self.username_entry = self.create_entry(content_frame, width=30)
+        self.username_entry.grid(row=0, column=1, padx=10, pady=10)
+        
+        # Password label and entry
+        password_label = tk.Label(content_frame, text="Password:", font=self.text_font, bg="#e6f2ff")
+        password_label.grid(row=1, column=0, padx=10, pady=10, sticky="e")
+        
+        self.password_entry = self.create_entry(content_frame, width=30, show="*")
+        self.password_entry.grid(row=1, column=1, padx=10, pady=10)
+        
+        # Create button frame
+        button_frame = tk.Frame(content_frame, bg="#e6f2ff", pady=20)
+        button_frame.grid(row=2, column=0, columnspan=2)
+        
+        # Login button
+        login_button = self.create_button(button_frame, text="Login", command=self.login)
+        login_button.pack(side="left", padx=10)
+        
+        # Register button
+        register_button = self.create_button(button_frame, text="Register", command=self.go_to_register)
+        register_button.pack(side="left", padx=10)
+        
+        # Admin login button
+        admin_login_button = self.create_button(button_frame, text="Admin Login", command=self.admin_login)
+        admin_login_button.pack(side="left", padx=10)
+        
+        # Initialize demo data (for testing purposes)
+        self.init_demo_data()
+    
+    def login(self):
+        # Handle login process
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+        
+        # Validate inputs
+        if not username or not password:
+            messagebox.showerror("Error", "Username and password are required!")
+            return
+        
+        # Try to login
+        if self.controller.login(username, password):
+            # Clear fields for next login
+            self.username_entry.delete(0, tk.END)
+            self.password_entry.delete(0, tk.END)
+        else:
+            messagebox.showerror("Error", "Invalid username or password!")
+    
+    def go_to_register(self):
+        # Navigate to registration frame
+        self.username_entry.delete(0, tk.END)
+        self.password_entry.delete(0, tk.END)
+        self.controller.show_frame(self.controller.register_frame)
+    
+    def admin_login(self):
+        # Handle admin login process
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+        
+        # Validate inputs
+        if not username or not password:
+            messagebox.showerror("Error", "Username and password are required!")
+            return
+        
+        # Get user from database
+        user = self.controller.db.get_user(username)
+        
+        # Check if user is admin
+        if user and user.password == password and isinstance(user, AdminUser):
+            self.controller.current_user = user
+            self.controller.admin_dashboard.update_dashboard()
+            
+            # Clear fields for next login
+            self.username_entry.delete(0, tk.END)
+            self.password_entry.delete(0, tk.END)
+            
+            self.controller.show_frame(self.controller.admin_dashboard)
+        else:
+            messagebox.showerror("Error", "Invalid admin credentials!")
+    
+    def init_demo_data(self):
+        # Initialize demo data for testing purposes
+        
+        # Check if admin already exists
+        admin = self.controller.db.get_user("admin")
+        if not admin:
+            # Create admin user
+            admin = AdminUser("admin", "admin123456789", "Admin User", "admin@abcdef.com", "1234567890", 2)
+            self.controller.db.add_user(admin)
+        
+        # Check if regular user exists
+        user = self.controller.db.get_user("user")
+        if not user:
+            # Create regular user
+            user = User("user", "user123", "Regular User", "user@example.com", "9876543210")
+            self.controller.db.add_user(user)
+
+class RegisterFrame(BaseFrame):
+    # Registration frame class
+    
+    def __init__(self, parent, controller):
+        # Initialize the registration frame
+        super().__init__(parent, controller)
+        
+        # Create header
+        self.create_header("Grand Prix Experience - Registration")
+        
+        # Create main content frame
+        content_frame = tk.Frame(self, bg="#e6f2ff", padx=20, pady=20)
+        content_frame.pack(expand=True)
+        
+        # Username label and entry
+        username_label = tk.Label(content_frame, text="Username:", font=self.text_font, bg="#e6f2ff")
+        username_label.grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        
+        self.username_entry = self.create_entry(content_frame, width=30)
+        self.username_entry.grid(row=0, column=1, padx=10, pady=10)
+        
+        # Password label and entry
+        password_label = tk.Label(content_frame, text="Password:", font=self.text_font, bg="#e6f2ff")
+        password_label.grid(row=1, column=0, padx=10, pady=10, sticky="e")
+        
+        self.password_entry = self.create_entry(content_frame, width=30, show="*")
+        self.password_entry.grid(row=1, column=1, padx=10, pady=10)
+        
+        # Name label and entry
+        name_label = tk.Label(content_frame, text="Full Name:", font=self.text_font, bg="#e6f2ff")
+        name_label.grid(row=2, column=0, padx=10, pady=10, sticky="e")
+        
+        self.name_entry = self.create_entry(content_frame, width=30)
+        self.name_entry.grid(row=2, column=1, padx=10, pady=10)
+        
+        # Email label and entry
+        email_label = tk.Label(content_frame, text="Email:", font=self.text_font, bg="#e6f2ff")
+        email_label.grid(row=3, column=0, padx=10, pady=10, sticky="e")
+        
+        self.email_entry = self.create_entry(content_frame, width=30)
+        self.email_entry.grid(row=3, column=1, padx=10, pady=10)
+        
+        # Phone label and entry
+        phone_label = tk.Label(content_frame, text="Phone:", font=self.text_font, bg="#e6f2ff")
+        phone_label.grid(row=4, column=0, padx=10, pady=10, sticky="e")
+        
+        self.phone_entry = self.create_entry(content_frame, width=30)
+        self.phone_entry.grid(row=4, column=1, padx=10, pady=10)
+        
+        # Create button frame
+        button_frame = tk.Frame(content_frame, bg="#e6f2ff", pady=20)
+        button_frame.grid(row=5, column=0, columnspan=2)
+        
+        # Register button
+        register_button = self.create_button(button_frame, text="Register", command=self.register)
+        register_button.pack(side="left", padx=10)
+        
+        # Back to login button
+        back_button = self.create_button(button_frame, text="Back to Login", command=self.back_to_login)
+        back_button.pack(side="left", padx=10)
+    
+    def register(self):
+        # Handle registration process
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+        name = self.name_entry.get()
+        email = self.email_entry.get()
+        phone = self.phone_entry.get()
+        
+        # Validate inputs
+        if not username or not password or not name or not email or not phone:
+            messagebox.showerror("Error", "All fields are required!")
+            return
+        
+        # Try to register
+        success, message = self.controller.register_user(username, password, name, email, phone)
+        
+        if success:
+            messagebox.showinfo("Success", message)
+            self.clear_form()
+            self.back_to_login()
+        else:
+            messagebox.showerror("Error", message)
+    
+    def clear_form(self):
+        # Clear all form fields
+        self.username_entry.delete(0, tk.END)
+        self.password_entry.delete(0, tk.END)
+        self.name_entry.delete(0, tk.END)
+        self.email_entry.delete(0, tk.END)
+        self.phone_entry.delete(0, tk.END)
+    
+    def back_to_login(self):
+        # Navigate back to login frame
+        self.clear_form()
+        self.controller.show_frame(self.controller.login_frame)
+
+class UserDashboard(BaseFrame):
+    # User dashboard frame class
+    
+    def __init__(self, parent, controller):
+        # Initialize the user dashboard frame
+        super().__init__(parent, controller)
+        
+        # Create header
+        self.header_frame = self.create_header("User Dashboard")
+        
+        # Create logout button in header
+        self.logout_button = self.create_button(self.header_frame, text="Logout", command=self.logout)
+        self.logout_button.pack(side="right", padx=20)
+        
+        # Create main content frame
+        self.content_frame = tk.Frame(self, bg="#e6f2ff", padx=20, pady=20)
+        self.content_frame.pack(fill="both", expand=True)
+        
+        # Create welcome label
+        self.welcome_label = tk.Label(self.content_frame, text="", font=self.subtitle_font, bg="#e6f2ff")
+        self.welcome_label.pack(pady=10)
+        
+        # Create button frame
+        button_frame = tk.Frame(self.content_frame, bg="#e6f2ff", pady=10)
+        button_frame.pack()
+        
+        # Purchase tickets button
+        purchase_button = self.create_button(button_frame, text="Purchase Tickets", command=self.purchase_tickets)
+        purchase_button.pack(side="left", padx=10, pady=10)
+        
+        # View profile button
+        profile_button = self.create_button(button_frame, text="My Profile", command=self.view_profile)
+        profile_button.pack(side="left", padx=10, pady=10)
+        
+        # Create purchase history frame
+        history_frame = tk.Frame(self.content_frame, bg="#e6f2ff", padx=20, pady=10)
+        history_frame.pack(fill="both", expand=True)
+        
+        # Create history label
+        history_label = tk.Label(history_frame, text="Purchase History", font=self.subtitle_font, bg="#e6f2ff")
+        history_label.pack(pady=10)
+        
+        # Create scrollable frame for purchase history
+        self.history_canvas = tk.Canvas(history_frame, bg="#e6f2ff", highlightthickness=0)
+        history_scrollbar = ttk.Scrollbar(history_frame, orient="vertical", command=self.history_canvas.yview)
+        
+        self.history_canvas.configure(yscrollcommand=history_scrollbar.set)
+        self.history_canvas.pack(side="left", fill="both", expand=True)
+        history_scrollbar.pack(side="right", fill="y")
+        
+        self.history_inner_frame = tk.Frame(self.history_canvas, bg="#e6f2ff")
+        self.history_canvas.create_window((0, 0), window=self.history_inner_frame, anchor="nw")
+        
+        self.history_inner_frame.bind("<Configure>", lambda e: self.history_canvas.configure(
+            scrollregion=self.history_canvas.bbox("all")))
+    
+    def update_dashboard(self):
+        # Update dashboard with current user information
+        if self.controller.current_user:
+            # Update welcome message
+            self.welcome_label.config(text="Welcome, " + self.controller.current_user.name + "!")
+            
+            # Clear existing purchase history
+            for widget in self.history_inner_frame.winfo_children():
+                widget.destroy()
+            
+            # Get purchase history
+            purchase_history = self.controller.current_user.get_purchase_history()
+            
+            if purchase_history:
+                # Create header row
+                header_frame = tk.Frame(self.history_inner_frame, bg="#d6e9ff", padx=10, pady=5)
+                header_frame.pack(fill="x", pady=(0, 5))
+                
+                # Header columns
+                cols = ["Order ID", "Date", "Tickets", "Total", "Status"]
+                for i, col in enumerate(cols):
+                    label = tk.Label(header_frame, text=col, font=self.text_font, bg="#d6e9ff", width=15)
+                    label.grid(row=0, column=i, padx=5, pady=5)
+                
+                # Add purchase rows
+                for i, purchase in enumerate(purchase_history):
+                    row_frame = tk.Frame(self.history_inner_frame, bg="#e6f2ff", padx=10, pady=5)
+                    row_frame.pack(fill="x", pady=(0, 2))
+                    
+                    # Get order details
+                    order_details = purchase.get_order_details()
+                    
+                    # Add order ID
+                    order_id_label = tk.Label(row_frame, text=order_details["order_id"][:8] + "...",
+                                            font=self.text_font, bg="#e6f2ff", width=15)
+                    order_id_label.grid(row=0, column=0, padx=5, pady=5)
+                    
+                    # Add date
+                    date_label = tk.Label(row_frame, text=order_details["order_date"].strftime("%Y-%m-%d"),
+                                        font=self.text_font, bg="#e6f2ff", width=15)
+                    date_label.grid(row=0, column=1, padx=5, pady=5)
+                    
+                    # Add tickets
+                    tickets_text = str(len(order_details["tickets"])) + " ticket(s)"
+                    tickets_label = tk.Label(row_frame, text=tickets_text, font=self.text_font, bg="#e6f2ff", width=15)
+                    tickets_label.grid(row=0, column=2, padx=5, pady=5)
+                    
+                    # Add total
+                    total_label = tk.Label(row_frame, text="$" + str(order_details["total"]), font=self.text_font, bg="#e6f2ff", width=15)
+                    total_label.grid(row=0, column=3, padx=5, pady=5)
+                    
+                    # Add status
+                    status_label = tk.Label(row_frame, text=order_details["status"], font=self.text_font, bg="#e6f2ff", width=15)
+                    status_label.grid(row=0, column=4, padx=5, pady=5)
+                    
+                    # Add view details button
+                    details_button = self.create_button(row_frame, text="Details", command=lambda o=order_details: self.show_order_details(o))
+                    details_button.grid(row=0, column=5, padx=5, pady=5)
+            else:
+                # No purchase history
+                no_history_label = tk.Label(self.history_inner_frame, text="No purchase history yet.", font=self.text_font, bg="#e6f2ff")
+                no_history_label.pack(pady=20)
+    
+    def show_order_details(self, order_details):
+        # Show detailed information about an order
+        details_window = tk.Toplevel(self.controller)
+        details_window.title("Order Details")
+        details_window.geometry("600x500")
+        details_window.configure(bg="#e6f2ff")
+        
+        # Create scrollable frame
+        canvas = tk.Canvas(details_window, bg="#e6f2ff", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(details_window, orient="vertical", command=canvas.yview)
+        
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        inner_frame = tk.Frame(canvas, bg="#e6f2ff", padx=20, pady=20)
+        canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+        
+        inner_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        
+        # Order information
+        tk.Label(inner_frame, text="Order Details", font=self.title_font, bg="#e6f2ff").pack(pady=(0, 20))
+        
+        tk.Label(inner_frame, text="Order ID: " + order_details["order_id"], 
+               font=self.text_font, bg="#e6f2ff", anchor="w").pack(fill="x", pady=5)
+        
+        tk.Label(inner_frame, text="Date: " + order_details["order_date"].strftime("%Y-%m-%d %H:%M:%S"),
+               font=self.text_font, bg="#e6f2ff", anchor="w").pack(fill="x", pady=5)
+        
+        tk.Label(inner_frame, text="Status: " + order_details["status"],
+               font=self.text_font, bg="#e6f2ff", anchor="w").pack(fill="x", pady=5)
+        
+        # Tickets information
+        tk.Label(inner_frame, text="Tickets", font=self.subtitle_font, bg="#e6f2ff").pack(pady=(20, 10))
+        
+        for i, ticket in enumerate(order_details["tickets"]):
+            ticket_frame = tk.Frame(inner_frame, bg="#d6e9ff", padx=10, pady=10)
+            ticket_frame.pack(fill="x", pady=5)
+            
+            tk.Label(ticket_frame, text="Ticket " + str(i+1) + ": " + ticket["name"],
+                   font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+            
+            tk.Label(ticket_frame, text="Price: $" + str(ticket["price"]),
+                   font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+        
+        # Payment information
+        tk.Label(inner_frame, text="Payment", font=self.subtitle_font, bg="#e6f2ff").pack(pady=(20, 10))
+        
+        payment_frame = tk.Frame(inner_frame, bg="#d6e9ff", padx=10, pady=10)
+        payment_frame.pack(fill="x", pady=5)
+        
+        payment_info = order_details["payment"]
+        
+        tk.Label(payment_frame, text="Payment Type: " + payment_info.get("payment_type", "N/A"),
+               font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+        
+        tk.Label(payment_frame, text="Amount: $" + str(payment_info["amount"]),
+               font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+        
+        tk.Label(payment_frame, text="Status: " + payment_info["status"],
+               font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+        
+        # Order summary
+        tk.Label(inner_frame, text="Order Summary", font=self.subtitle_font, bg="#e6f2ff").pack(pady=(20, 10))
+        
+        summary_frame = tk.Frame(inner_frame, bg="#d6e9ff", padx=10, pady=10)
+        summary_frame.pack(fill="x", pady=5)
+        
+        tk.Label(summary_frame, text="Subtotal: $" + str(sum(t["price"] for t in order_details["tickets"])),
+               font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+        
+        if order_details["discount_code"]:
+            tk.Label(summary_frame, text="Discount (" + order_details["discount_code"] + "): -$" + 
+                   str(order_details["discount_amount"]), font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+        
+        tk.Label(summary_frame, text="Total: $" + str(order_details["total"]),
+                   bg="#d6e9ff", font=self.subtitle_font).pack(anchor="w")
+        
+        # Close button
+        close_button = tk.Button(inner_frame, text="Close", font=self.button_font,
+                              bg="#4da6ff", fg="white", padx=10, pady=5,
+                              command=details_window.destroy)
+        close_button.pack(pady=20)
+    
+    def purchase_tickets(self):
+        # Navigate to ticket purchase frame
+        self.controller.ticket_purchase.reset_form()
+        self.controller.show_frame(self.controller.ticket_purchase)
+    
+    def view_profile(self):
+        # Navigate to profile frame
+        self.controller.profile_frame.load_profile()
+        self.controller.show_frame(self.controller.profile_frame)
+    
+    def logout(self):
+        # Log out the current user
+        self.controller.logout()
+
+class AdminDashboard(BaseFrame):
+    # Admin dashboard frame class
+    
+    def __init__(self, parent, controller):
+        # Initialize the admin dashboard frame
+        super().__init__(parent, controller)
+        
+        # Create header
+        self.header_frame = self.create_header("Admin Dashboard")
+        
+        # Create logout button in header
+        self.logout_button = self.create_button(self.header_frame, text="Logout", command=self.logout)
+        self.logout_button.pack(side="right", padx=20)
+        
+        # Create main content frame with tabs
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Create Sales tab
+        self.sales_tab = tk.Frame(self.notebook, bg="#e6f2ff")
+        self.notebook.add(self.sales_tab, text="Sales")
+        
+        # Create Users tab
+        self.users_tab = tk.Frame(self.notebook, bg="#e6f2ff")
+        self.notebook.add(self.users_tab, text="Users")
+        
+        # Create Discounts tab
+        self.discounts_tab = tk.Frame(self.notebook, bg="#e6f2ff")
+        self.notebook.add(self.discounts_tab, text="Discounts")
+        
+        # Setup sales tab
+        self.setup_sales_tab()
+        
+        # Setup users tab
+        self.setup_users_tab()
+        
+        # Setup discounts tab
+        self.setup_discounts_tab()
+    
+    def setup_sales_tab(self):
+        # Setup the sales tab
+        
+        # Create sales chart frame
+        chart_frame = tk.Frame(self.sales_tab, bg="#e6f2ff", padx=10, pady=10)
+        chart_frame.pack(fill="both", expand=True)
+        
+        # Create title
+        title_label = tk.Label(chart_frame, text="Daily Ticket Sales", font=self.subtitle_font, bg="#e6f2ff")
+        title_label.pack(pady=10)
+        
+        # Create frame for matplotlib figure
+        self.plot_frame = tk.Frame(chart_frame, bg="#e6f2ff")
+        self.plot_frame.pack(fill="both", expand=True)
+        
+        # Create date range selection
+        range_frame = tk.Frame(chart_frame, bg="#e6f2ff", pady=10)
+        range_frame.pack(fill="x")
+        
+        tk.Label(range_frame, text="Date Range:", font=self.text_font, bg="#e6f2ff").pack(side="left", padx=10)
+        
+        # Date range options
+        self.range_var = tk.StringVar(value="7days")
+        
+        ranges = [("Last 7 Days", "7days"), ("Last 30 Days", "30days"), ("All Time", "all")]
+        
+        for text, value in ranges:
+            rb = ttk.Radiobutton(range_frame, text=text, value=value, variable=self.range_var, 
+                                command=self.update_sales_chart)
+            rb.pack(side="left", padx=10)
+    
+    def setup_users_tab(self):
+        # Setup the users tab
+        
+        # Create users list frame
+        users_frame = tk.Frame(self.users_tab, bg="#e6f2ff", padx=10, pady=10)
+        users_frame.pack(fill="both", expand=True)
+        
+        # Create users table
+        columns = ("Username", "Name", "Email", "Phone", "Created", "Type")
+        
+        self.users_tree = ttk.Treeview(users_frame, columns=columns, show="headings")
+        
+        # Define column headings
+        for col in columns:
+            self.users_tree.heading(col, text=col)
+            # Adjust column width
+            self.users_tree.column(col, width=100)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(users_frame, orient="vertical", command=self.users_tree.yview)
+        self.users_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack elements
+        self.users_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Add buttons for user management
+        button_frame = tk.Frame(self.users_tab, bg="#e6f2ff", padx=10, pady=10)
+        button_frame.pack(fill="x")
+        
+        add_button = self.create_button(button_frame, text="Add User", command=self.add_user)
+        add_button.pack(side="left", padx=5)
+        
+        edit_button = self.create_button(button_frame, text="Edit User", command=self.edit_user)
+        edit_button.pack(side="left", padx=5)
+        
+        delete_button = self.create_button(button_frame, text="Delete User", command=self.delete_user)
+        delete_button.pack(side="left", padx=5)
+    
+    def setup_discounts_tab(self):
+        # Setup the discounts tab
+        
+        # Create discounts list frame
+        discounts_frame = tk.Frame(self.discounts_tab, bg="#e6f2ff", padx=10, pady=10)
+        discounts_frame.pack(fill="both", expand=True)
+        
+        # Create discounts table
+        columns = ("Code", "Percentage", "Status")
+        
+        self.discounts_tree = ttk.Treeview(discounts_frame, columns=columns, show="headings")
+        
+        # Define column headings
+        for col in columns:
+            self.discounts_tree.heading(col, text=col)
+            # Adjust column width
+            self.discounts_tree.column(col, width=100)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(discounts_frame, orient="vertical", command=self.discounts_tree.yview)
+        self.discounts_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack elements
+        self.discounts_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Add buttons for discount management
+        button_frame = tk.Frame(self.discounts_tab, bg="#e6f2ff", padx=10, pady=10)
+        button_frame.pack(fill="x")
+        
+        add_button = self.create_button(button_frame, text="Add Discount", command=self.add_discount)
+        add_button.pack(side="left", padx=5)
+        
+        toggle_button = self.create_button(button_frame, text="Toggle Status", command=self.toggle_discount)
+        toggle_button.pack(side="left", padx=5)
+    
+    def update_dashboard(self):
+        # Update all dashboard content
+        self.update_sales_chart()
+        self.update_users_list()
+        self.update_discounts_list()
+    
+    def update_sales_chart(self):
+        # Update the sales chart
+        
+        # Clear existing plot
+        for widget in self.plot_frame.winfo_children():
+            widget.destroy()
+        
+        # Get sales data
+        sales_data = self.controller.db.get_all_sales()
+        
+        if not sales_data:
+            # No sales data
+            no_data_label = tk.Label(self.plot_frame, text="No sales data available.", 
+                                    font=self.text_font, bg="#e6f2ff")
+            no_data_label.pack(pady=50)
+            return
+        
+        # Process sales data
+        dates = []
+        counts = []
+        
+        # Sort dates
+        sorted_dates = sorted(sales_data.keys())
+        
+        # Filter by date range
+        date_range = self.range_var.get()
+        if date_range == "7days":
+            # Last 7 days
+            if len(sorted_dates) > 7:
+                sorted_dates = sorted_dates[-7:]
+        elif date_range == "30days":
+            # Last 30 days
+            if len(sorted_dates) > 30:
+                sorted_dates = sorted_dates[-30:]
+        
+        # Count tickets per day
+        for date_str in sorted_dates:
+            dates.append(date_str)
+            # Count tickets in all sales for this date
+            ticket_count = sum(len(sale["tickets"]) for sale in sales_data[date_str])
+            counts.append(ticket_count)
+        
+        # Create matplotlib figure
+        fig = plt.Figure(figsize=(10, 6), dpi=100)
+        ax = fig.add_subplot(111)
+        
+        # Plot bar chart
+        ax.bar(dates, counts, color="#4da6ff")
+        
+        # Set labels
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Tickets Sold")
+        ax.set_title("Daily Ticket Sales")
+        
+        # Rotate x-axis labels for better readability
+        ax.set_xticklabels(dates, rotation=45, ha="right")
+        
+        # Adjust layout
+        fig.tight_layout()
+        
+        # Add figure to tkinter window
+        canvas = FigureCanvasTkAgg(fig, master=self.plot_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+    
+    def update_users_list(self):
+        # Update the users list
+        
+        # Clear existing data
+        for item in self.users_tree.get_children():
+            self.users_tree.delete(item)
+        
+        # Get all users
+        users = self.controller.db.get_all_users()
+        
+        # Add users to table
+        for username, user in users.items():
+            # Determine user type
+            user_type = "Admin" if isinstance(user, AdminUser) else "User"
+            
+            # Format created date
+            created_date = user.created_at.strftime("%Y-%m-%d")
+            
+            # Add to table
+            self.users_tree.insert("", "end", values=(username, user.name, user.email, user.phone, created_date, user_type))
+    
+    def update_discounts_list(self):
+        # Update the discounts list
+        
+        # Clear existing data
+        for item in self.discounts_tree.get_children():
+            self.discounts_tree.delete(item)
+        
+        # Get all discounts
+        discounts = self.controller.db.get_all_discounts()
+        
+        # Add discounts to table
+        for code, discount in discounts.items():
+            # Format status
+            status = "Active" if discount["active"] else "Inactive"
+            
+            # Format percentage
+            percentage = str(discount["percentage"]) + "%"
+            
+            # Add to table
+            self.discounts_tree.insert("", "end", values=(code, percentage, status))
+    
+    def add_user(self):
+        # Add a new user
+        
+        # Create a dialog window
+        dialog = tk.Toplevel(self.controller)
+        dialog.title("Add User")
+        dialog.geometry("400x350")
+        dialog.configure(bg="#e6f2ff")
+        dialog.grab_set()  # Make window modal
+        
+        # Create form
+        form_frame = tk.Frame(dialog, bg="#e6f2ff", padx=20, pady=20)
+        form_frame.pack(fill="both", expand=True)
+        
+        # Username
+        tk.Label(form_frame, text="Username:", font=self.text_font, bg="#e6f2ff").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        username_entry = tk.Entry(form_frame, font=self.text_font)
+        username_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        # Password
+        tk.Label(form_frame, text="Password:", font=self.text_font, bg="#e6f2ff").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        password_entry = tk.Entry(form_frame, font=self.text_font, show="*")
+        password_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        
+        # Name
+        tk.Label(form_frame, text="Name:", font=self.text_font, bg="#e6f2ff").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        name_entry = tk.Entry(form_frame, font=self.text_font)
+        name_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        
+        # Email
+        tk.Label(form_frame, text="Email:", font=self.text_font, bg="#e6f2ff").grid(row=3, column=0, padx=5, pady=5, sticky="e")
+        email_entry = tk.Entry(form_frame, font=self.text_font)
+        email_entry.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+        
+        # Phone
+        tk.Label(form_frame, text="Phone:", font=self.text_font, bg="#e6f2ff").grid(row=4, column=0, padx=5, pady=5, sticky="e")
+        phone_entry = tk.Entry(form_frame, font=self.text_font)
+        phone_entry.grid(row=4, column=1, padx=5, pady=5, sticky="w")
+        
+        # User type
+        tk.Label(form_frame, text="User Type:", font=self.text_font, bg="#e6f2ff").grid(row=5, column=0, padx=5, pady=5, sticky="e")
+        user_type = tk.StringVar(value="user")
+        ttk.Radiobutton(form_frame, text="Regular User", variable=user_type, value="user").grid(row=5, column=1, padx=5, pady=5, sticky="w")
+        ttk.Radiobutton(form_frame, text="Admin User", variable=user_type, value="admin").grid(row=6, column=1, padx=5, pady=5, sticky="w")
+        
+        # Admin level (only for admin users)
+        tk.Label(form_frame, text="Admin Level (1-3):", font=self.text_font, bg="#e6f2ff").grid(row=7, column=0, padx=5, pady=5, sticky="e")
+        admin_level = tk.Spinbox(form_frame, from_=1, to=3, width=5, font=self.text_font)
+        admin_level.grid(row=7, column=1, padx=5, pady=5, sticky="w")
+        
+        # Buttons
+        button_frame = tk.Frame(dialog, bg="#e6f2ff", pady=10)
+        button_frame.pack(fill="x")
+        
+        def save_user():
+            # Get form data
+            username = username_entry.get()
+            password = password_entry.get()
+            name = name_entry.get()
+            email = email_entry.get()
+            phone = phone_entry.get()
+            is_admin = user_type.get() == "admin"
+            
+            # Validate inputs
+            if not username or not password or not name or not email or not phone:
+                messagebox.showerror("Error", "All fields are required!", parent=dialog)
+                return
+            
+            # Check if username already exists
+            if self.controller.db.get_user(username):
+                messagebox.showerror("Error", "Username already exists!", parent=dialog)
+                return
+            
+            # Create user
+            if is_admin:
+                level = int(admin_level.get())
+                user = AdminUser(username, password, name, email, phone, level)
+            else:
+                user = User(username, password, name, email, phone)
+            
+            # Add user to database
+            self.controller.db.add_user(user)
+            
+            # Update users list
+            self.update_users_list()
+            
+            # Close dialog
+            dialog.destroy()
+        
+        # Save button
+        save_button = tk.Button(button_frame, text="Save", font=self.button_font,
+                             bg="#4da6ff", fg="white", padx=10, pady=5,
+                             command=save_user)
+        save_button.pack(side="left", padx=10)
+        
+        # Cancel button
+        cancel_button = tk.Button(button_frame, text="Cancel", font=self.button_font,
+                               bg="#f0f0f0", fg="black", padx=10, pady=5,
+                               command=dialog.destroy)
+        cancel_button.pack(side="left", padx=10)
+    
+    def edit_user(self):
+        # Edit an existing user
+        
+        # Get selected user
+        selected_items = self.users_tree.selection()
+        
+        if not selected_items:
+            messagebox.showinfo("Info", "Please select a user to edit.")
+            return
+        
+        # Get username of selected user
+        username = self.users_tree.item(selected_items[0])["values"][0]
+        
+        # Get user from database
+        user = self.controller.db.get_user(username)
+        
+        if not user:
+            messagebox.showerror("Error", "User not found!")
+            return
+        
+        # Create a dialog window
+        dialog = tk.Toplevel(self.controller)
+        dialog.title("Edit User")
+        dialog.geometry("400x350")
+        dialog.configure(bg="#e6f2ff")
+        dialog.grab_set()  # Make window modal
+        
+        # Create form
+        form_frame = tk.Frame(dialog, bg="#e6f2ff", padx=20, pady=20)
+        form_frame.pack(fill="both", expand=True)
+        
+        # Username (read-only)
+        tk.Label(form_frame, text="Username:", font=self.text_font, bg="#e6f2ff").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        username_label = tk.Label(form_frame, text=user.username, font=self.text_font, bg="#e6f2ff")
+        username_label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        # Password
+        tk.Label(form_frame, text="Password:", font=self.text_font, bg="#e6f2ff").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        password_entry = tk.Entry(form_frame, font=self.text_font, show="*")
+        password_entry.insert(0, user.password)
+        password_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        
+        # Name
+        tk.Label(form_frame, text="Name:", font=self.text_font, bg="#e6f2ff").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        name_entry = tk.Entry(form_frame, font=self.text_font)
+        name_entry.insert(0, user.name)
+        name_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        
+        # Email
+        tk.Label(form_frame, text="Email:", font=self.text_font, bg="#e6f2ff").grid(row=3, column=0, padx=5, pady=5, sticky="e")
+        email_entry = tk.Entry(form_frame, font=self.text_font)
+        email_entry.insert(0, user.email)
+        email_entry.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+        
+        # Phone
+        tk.Label(form_frame, text="Phone:", font=self.text_font, bg="#e6f2ff").grid(row=4, column=0, padx=5, pady=5, sticky="e")
+        phone_entry = tk.Entry(form_frame, font=self.text_font)
+        phone_entry.insert(0, user.phone)
+        phone_entry.grid(row=4, column=1, padx=5, pady=5, sticky="w")
+        
+        # User type (read-only)
+        tk.Label(form_frame, text="User Type:", font=self.text_font, bg="#e6f2ff").grid(row=5, column=0, padx=5, pady=5, sticky="e")
+        user_type_label = tk.Label(form_frame, text="Admin" if isinstance(user, AdminUser) else "Regular User", 
+                                 font=self.text_font, bg="#e6f2ff")
+        user_type_label.grid(row=5, column=1, padx=5, pady=5, sticky="w")
+        
+        # Admin level (only for admin users)
+        if isinstance(user, AdminUser):
+            tk.Label(form_frame, text="Admin Level (1-3):", font=self.text_font, bg="#e6f2ff").grid(row=6, column=0, padx=5, pady=5, sticky="e")
+            admin_level = tk.Spinbox(form_frame, from_=1, to=3, width=5, font=self.text_font)
+            admin_level.delete(0, tk.END)
+            admin_level.insert(0, user.admin_level)
+            admin_level.grid(row=6, column=1, padx=5, pady=5, sticky="w")
+        
+        # Buttons
+        button_frame = tk.Frame(dialog, bg="#e6f2ff", pady=10)
+        button_frame.pack(fill="x")
+        
+        def save_user():
+            # Get form data
+            password = password_entry.get()
+            name = name_entry.get()
+            email = email_entry.get()
+            phone = phone_entry.get()
+            
+            # Validate inputs
+            if not password or not name or not email or not phone:
+                messagebox.showerror("Error", "All fields are required!", parent=dialog)
+                return
+            
+            # Update user
+            user.password = password
+            user.name = name
+            user.email = email
+            user.phone = phone
+            
+            # Update admin level if admin user
+            if isinstance(user, AdminUser):
+                user.admin_level = int(admin_level.get())
+            
+            # Update in database
+            self.controller.db.update_user(user)
+            
+            # Update users list
+            self.update_users_list()
+            
+            # Close dialog
+            dialog.destroy()
+        
+        # Save button
+        save_button = tk.Button(button_frame, text="Save", font=self.button_font,
+                             bg="#4da6ff", fg="white", padx=10, pady=5,
+                             command=save_user)
+        save_button.pack(side="left", padx=10)
+        
+        # Cancel button
+        cancel_button = tk.Button(button_frame, text="Cancel", font=self.button_font,
+                               bg="#f0f0f0", fg="black", padx=10, pady=5,
+                               command=dialog.destroy)
+        cancel_button.pack(side="left", padx=10)
+    
+    def delete_user(self):
+        # Delete a user
+        
+        # Get selected user
+        selected_items = self.users_tree.selection()
+        
+        if not selected_items:
+            messagebox.showinfo("Info", "Please select a user to delete.")
+            return
+        
+        # Get username of selected user
+        username = self.users_tree.item(selected_items[0])["values"][0]
+        
+        # Confirm deletion
+        if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this user?"):
+            # Delete from database
+            if self.controller.db.delete_user(username):
+                # Update users list
+                self.update_users_list()
+                messagebox.showinfo("Success", "User deleted successfully.")
+            else:
+                messagebox.showerror("Error", "Failed to delete user.")
+    
+    def add_discount(self):
+        # Add a new discount
+        
+        # Create a dialog window
+        dialog = tk.Toplevel(self.controller)
+        dialog.title("Add Discount")
+        dialog.geometry("350x200")
+        dialog.configure(bg="#e6f2ff")
+        dialog.grab_set()  # Make window modal
+        
+        # Create form
+        form_frame = tk.Frame(dialog, bg="#e6f2ff", padx=20, pady=20)
+        form_frame.pack(fill="both", expand=True)
+        
+        # Discount code
+        tk.Label(form_frame, text="Discount Code:", font=self.text_font, bg="#e6f2ff").grid(row=0, column=0, padx=5, pady=5, sticky="e")
+        code_entry = tk.Entry(form_frame, font=self.text_font)
+        code_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        
+        # Percentage
+        tk.Label(form_frame, text="Percentage:", font=self.text_font, bg="#e6f2ff").grid(row=1, column=0, padx=5, pady=5, sticky="e")
+        percentage_entry = tk.Spinbox(form_frame, from_=1, to=100, width=5, font=self.text_font)
+        percentage_entry.grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        
+        # Status
+        tk.Label(form_frame, text="Status:", font=self.text_font, bg="#e6f2ff").grid(row=2, column=0, padx=5, pady=5, sticky="e")
+        status_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(form_frame, text="Active", variable=status_var).grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        
+        # Buttons
+        button_frame = tk.Frame(dialog, bg="#e6f2ff", pady=10)
+        button_frame.pack(fill="x")
+        
+        def save_discount():
+            # Get form data
+            code = code_entry.get().upper()
+            try:
+                percentage = int(percentage_entry.get())
+            except ValueError:
+                messagebox.showerror("Error", "Percentage must be a number!", parent=dialog)
+                return
+            
+            active = status_var.get()
+            
+            # Validate inputs
+            if not code:
+                messagebox.showerror("Error", "Discount code is required!", parent=dialog)
+                return
+            
+            # Get existing discounts
+            discounts = self.controller.db.get_all_discounts()
+            
+            # Check if code already exists
+            if code in discounts:
+                messagebox.showerror("Error", "Discount code already exists!", parent=dialog)
+                return
+            
+            # Add new discount
+            discounts[code] = {"percentage": percentage, "active": active}
+            
+            # Save to database
+            with open(self.controller.db.discounts_file, 'wb') as file:
+                pickle.dump(discounts, file)
+            
+            # Update discounts list
+            self.update_discounts_list()
+            
+            # Close dialog
+            dialog.destroy()
+        
+        # Save button
+        save_button = tk.Button(button_frame, text="Save", font=self.button_font,
+                             bg="#4da6ff", fg="white", padx=10, pady=5,
+                             command=save_discount)
+        save_button.pack(side="left", padx=10)
+        
+        # Cancel button
+        cancel_button = tk.Button(button_frame, text="Cancel", font=self.button_font,
+                               bg="#f0f0f0", fg="black", padx=10, pady=5,
+                               command=dialog.destroy)
+        cancel_button.pack(side="left", padx=10)
+    
+    def toggle_discount(self):
+        # Toggle the status of a discount
+        
+        # Get selected discount
+        selected_items = self.discounts_tree.selection()
+        
+        if not selected_items:
+            messagebox.showinfo("Info", "Please select a discount to toggle.")
+            return
+        
+        # Get code of selected discount
+        code = self.discounts_tree.item(selected_items[0])["values"][0]
+        
+        # Get current status
+        discounts = self.controller.db.get_all_discounts()
+        current_status = discounts[code]["active"]
+        
+        # Toggle status
+        discounts[code]["active"] = not current_status
+        
+        # Save to database
+        with open(self.controller.db.discounts_file, 'wb') as file:
+            pickle.dump(discounts, file)
+        
+        # Update discounts list
+        self.update_discounts_list()
+        
+        # Show confirmation
+        new_status = "activated" if discounts[code]["active"] else "deactivated"
+        messagebox.showinfo("Success", "Discount code " + code + " has been " + new_status + ".")
+    
+    def logout(self):
+        # Log out the current admin user
+        self.controller.logout()
+
+class TicketPurchaseFrame(BaseFrame):
+    # Ticket purchase frame class
+    
+    def __init__(self, parent, controller):
+        # Initialize the ticket purchase frame
+        super().__init__(parent, controller)
+        
+        # Create header
+        self.header_frame = self.create_header("Purchase Tickets")
+        
+        # Create back button in header
+        self.back_button = self.create_button(self.header_frame, text="Back to Dashboard", 
+                                            command=self.back_to_dashboard)
+        self.back_button.pack(side="left", padx=20)
+        
+        # Create main container frame with horizontal layout
+        self.main_container = tk.Frame(self, bg="#e6f2ff")
+        self.main_container.pack(fill="both", expand=True)
+        
+        # Create left panel for ticket selection
+        self.left_panel = tk.Frame(self.main_container, bg="#e6f2ff", padx=20, pady=20)
+        self.left_panel.pack(side="left", fill="both", expand=True)
+        
+        # Create right panel for cart
+        self.right_panel = tk.Frame(self.main_container, bg="#e6f2ff", padx=20, pady=20, width=400)
+        self.right_panel.pack(side="right", fill="y", expand=False)
+        self.right_panel.pack_propagate(False)  # Prevent the frame from shrinking
+        
+        # Create ticket type selection in left panel
+        self.create_ticket_selector()
+        
+        # Create ticket details frame (will be populated when a ticket type is selected)
+        self.ticket_details_frame = tk.Frame(self.left_panel, bg="#e6f2ff", padx=10, pady=10)
+        self.ticket_details_frame.pack(fill="both", expand=True)
+        
+        # Create cart frame in right panel
+        self.create_cart_frame()
+        
+        # Initialize selected tickets list
+        self.selected_tickets = []
+        
+        # Update selected tickets display
+        self.update_selected_tickets()
+    
+    def create_ticket_selector(self):
+        # Create the ticket type selector
+        
+        # Create frame
+        selector_frame = tk.Frame(self.left_panel, bg="#e6f2ff", padx=10, pady=10)
+        selector_frame.pack(fill="x")
+        
+        # Create label
+        tk.Label(selector_frame, text="Select Ticket Type:", font=self.subtitle_font, bg="#e6f2ff").pack(pady=10)
+        
+        # Create buttons frame
+        buttons_frame = tk.Frame(selector_frame, bg="#e6f2ff")
+        buttons_frame.pack()
+        
+        # Single race ticket button
+        single_race_button = self.create_button(buttons_frame, text="Single Race Pass", 
+                                             command=lambda: self.show_ticket_form("single"))
+        single_race_button.grid(row=0, column=0, padx=10, pady=10)
+        
+        # Weekend package button
+        weekend_button = self.create_button(buttons_frame, text="Weekend Package", 
+                                         command=lambda: self.show_ticket_form("weekend"))
+        weekend_button.grid(row=0, column=1, padx=10, pady=10)
+        
+        # Season membership button
+        season_button = self.create_button(buttons_frame, text="Season Membership", 
+                                        command=lambda: self.show_ticket_form("season"))
+        season_button.grid(row=0, column=2, padx=10, pady=10)
+    
+    def create_cart_frame(self):
+        # Create the cart frame in the right panel
+        
+        # Cart title
+        tk.Label(self.right_panel, text="Selected Tickets", 
+               font=self.subtitle_font, bg="#e6f2ff").pack(pady=(20, 10))
+        
+        # Create scrollable frame for cart items
+        self.cart_container = tk.Frame(self.right_panel, bg="#e6f2ff")
+        self.cart_container.pack(fill="both", expand=True)
+        
+        # Checkout button at bottom of right panel
+        self.checkout_button = self.create_button(self.right_panel, text="Proceed to Checkout", 
+                                               command=self.checkout)
+        self.checkout_button.pack(pady=20, fill="x")
+        
+        # Disable checkout button initially
+        self.checkout_button.config(state="disabled")
+    
+    def show_ticket_form(self, ticket_type):
+        # Clear existing form
+        for widget in self.ticket_details_frame.winfo_children():
+            widget.destroy()
+        
+        # Create form frame
+        form_frame = tk.Frame(self.ticket_details_frame, bg="#d6e9ff", padx=20, pady=20)
+        form_frame.pack(fill="x")
+        
+        if ticket_type == "single":
+            # Single race ticket form
+            
+            # Title
+            tk.Label(form_frame, text="Single Race Pass", font=self.subtitle_font, bg="#d6e9ff").pack(pady=(0, 10))
+            
+            # Create form fields
+            fields_frame = tk.Frame(form_frame, bg="#d6e9ff")
+            fields_frame.pack(fill="x")
+            
+            # Race date
+            tk.Label(fields_frame, text="Race Date:", font=self.text_font, bg="#d6e9ff").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+            
+            # Create a list of dates (for demonstration)
+            dates = ["2023-06-10", "2023-06-24", "2023-07-08", "2023-07-22", "2023-08-05"]
+            date_var = tk.StringVar(value=dates[0])
+            date_menu = ttk.Combobox(fields_frame, textvariable=date_var, values=dates, state="readonly", width=15)
+            date_menu.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+            
+            # Race name
+            tk.Label(fields_frame, text="Race:", font=self.text_font, bg="#d6e9ff").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+            
+            # Create a list of races (for demonstration)
+            races = {
+                "2023-06-10": "Monaco Grand Prix",
+                "2023-06-24": "British Grand Prix",
+                "2023-07-08": "Austrian Grand Prix",
+                "2023-07-22": "German Grand Prix",
+                "2023-08-05": "Hungarian Grand Prix"
+            }
+            
+            race_var = tk.StringVar(value=races[dates[0]])
+            race_label = tk.Label(fields_frame, textvariable=race_var, font=self.text_font, bg="#d6e9ff")
+            race_label.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+            
+            # Update race name when date changes
+            def update_race(event):
+                race_var.set(races[date_var.get()])
+            
+            date_menu.bind("<<ComboboxSelected>>", update_race)
+            
+            # Seat type
+            tk.Label(fields_frame, text="Seat Type:", font=self.text_font, bg="#d6e9ff").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+            
+            seat_types = ["Standard", "Premium", "VIP"]
+            seat_var = tk.StringVar(value=seat_types[0])
+            
+            # Price
+            tk.Label(fields_frame, text="Price:", font=self.text_font, bg="#d6e9ff").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+            
+            prices = {"Standard": "$150", "Premium": "$250", "VIP": "$300"}
+            price_var = tk.StringVar(value=prices[seat_types[0]])
+            price_label = tk.Label(fields_frame, textvariable=price_var, font=self.text_font, bg="#d6e9ff")
+            price_label.grid(row=3, column=1, padx=10, pady=10, sticky="w")
+            
+            # Define update_price function before creating radiobuttons
+            def update_price():
+                price_var.set(prices[seat_var.get()])
+            
+            # Now create radiobuttons with the function reference
+            for i, seat_type in enumerate(seat_types):
+                ttk.Radiobutton(fields_frame, text=seat_type, variable=seat_var, value=seat_type, 
+                            command=update_price).grid(row=2, column=1+i, padx=5, pady=10, sticky="w")
+            
+            # Add to cart button
+            add_button = self.create_button(form_frame, text="Add to Cart", 
+                                        command=lambda: self.add_single_race_ticket(date_var.get(), race_var.get(), seat_var.get()))
+            add_button.pack(pady=20)
+            
+        elif ticket_type == "weekend":
+            # Weekend package ticket form
+            
+            # Title
+            tk.Label(form_frame, text="Weekend Package", font=self.subtitle_font, bg="#d6e9ff").pack(pady=(0, 10))
+            
+            # Create form fields
+            fields_frame = tk.Frame(form_frame, bg="#d6e9ff")
+            fields_frame.pack(fill="x")
+            
+            # Event weekend
+            tk.Label(fields_frame, text="Event Weekend:", font=self.text_font, bg="#d6e9ff").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+            
+            # Create a list of weekends (for demonstration)
+            weekends = ["June 9-11, 2023 (Monaco)", "June 23-25, 2023 (British)", 
+                    "July 7-9, 2023 (Austrian)", "July 21-23, 2023 (German)"]
+            weekend_var = tk.StringVar(value=weekends[0])
+            weekend_menu = ttk.Combobox(fields_frame, textvariable=weekend_var, values=weekends, state="readonly", width=30)
+            weekend_menu.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+            
+            # Parking option
+            tk.Label(fields_frame, text="Include Parking?", font=self.text_font, bg="#d6e9ff").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+            
+            parking_var = tk.BooleanVar(value=False)
+            ttk.Checkbutton(fields_frame, text="Yes (+ $50)", variable=parking_var).grid(row=1, column=1, padx=10, pady=10, sticky="w")
+            
+            # Price
+            tk.Label(fields_frame, text="Price:", font=self.text_font, bg="#d6e9ff").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+            
+            base_price = 350
+            price_var = tk.StringVar(value="$" + str(base_price))
+            price_label = tk.Label(fields_frame, textvariable=price_var, font=self.text_font, bg="#d6e9ff")
+            price_label.grid(row=2, column=1, padx=10, pady=10, sticky="w")
+            
+            # Update price when parking option changes
+            def update_weekend_price():
+                total_price = base_price + (50 if parking_var.get() else 0)
+                price_var.set("$" + str(total_price))
+            
+            # Link the checkbutton to the price update function
+            for cb in fields_frame.grid_slaves(row=1, column=1):
+                cb.config(command=update_weekend_price)
+            
+            # Add to cart button
+            add_button = self.create_button(form_frame, text="Add to Cart", 
+                                        command=lambda: self.add_weekend_package(weekend_var.get(), parking_var.get()))
+            add_button.pack(pady=20)
+            
+        elif ticket_type == "season":
+            # Season membership ticket form
+            
+            # Title
+            tk.Label(form_frame, text="Season Membership", font=self.subtitle_font, bg="#d6e9ff").pack(pady=(0, 10))
+            
+            # Create form fields
+            fields_frame = tk.Frame(form_frame, bg="#d6e9ff")
+            fields_frame.pack(fill="x")
+            
+            # Season
+            tk.Label(fields_frame, text="Season:", font=self.text_font, bg="#d6e9ff").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+            
+            season_var = tk.StringVar(value="2023")
+            tk.Label(fields_frame, textvariable=season_var, font=self.text_font, bg="#d6e9ff").grid(row=0, column=1, padx=10, pady=10, sticky="w")
+            
+            # Membership level
+            tk.Label(fields_frame, text="Membership Level:", font=self.text_font, bg="#d6e9ff").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+            
+            levels = ["Bronze", "Silver", "Gold"]
+            level_var = tk.StringVar(value=levels[0])
+            
+            # Price
+            tk.Label(fields_frame, text="Price:", font=self.text_font, bg="#d6e9ff").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+            
+            prices = {"Bronze": "$1000", "Silver": "$1500", "Gold": "$2000"}
+            price_var = tk.StringVar(value=prices[levels[0]])
+            price_label = tk.Label(fields_frame, textvariable=price_var, font=self.text_font, bg="#d6e9ff")
+            price_label.grid(row=2, column=1, padx=10, pady=10, sticky="w")
+            
+            # Benefits
+            tk.Label(fields_frame, text="Benefits:", font=self.text_font, bg="#d6e9ff").grid(row=3, column=0, padx=10, pady=10, sticky="ne")
+            
+            benefits = {
+                "Bronze": ["Access to all season races", 
+                        "Standard seating at all events", 
+                        "Paddock access for 1 race", 
+                        "Season merchandise pack"],
+                "Silver": ["Access to all season races", 
+                        "Premium seating at all events", 
+                        "Paddock access for 3 races", 
+                        "Complimentary parking for 5 events", 
+                        "Season merchandise pack"],
+                "Gold": ["Access to all season races", 
+                    "VIP seating at all events", 
+                    "Exclusive paddock access", 
+                    "Meet and greet with drivers", 
+                    "Complimentary parking for all events", 
+                    "Season merchandise pack"]
+            }
+            
+            benefits_text = tk.Text(fields_frame, width=40, height=6, font=self.text_font, wrap=tk.WORD)
+            benefits_text.grid(row=3, column=1, columnspan=3, padx=10, pady=10, sticky="w")
+            benefits_text.insert(tk.END, "\n".join("• " + b for b in benefits[levels[0]]))
+            benefits_text.config(state="disabled")
+            
+            # Define update_season_info function before creating radiobuttons
+            def update_season_info():
+                price_var.set(prices[level_var.get()])
+                benefits_text.config(state="normal")
+                benefits_text.delete(1.0, tk.END)
+                benefits_text.insert(tk.END, "\n".join("• " + b for b in benefits[level_var.get()]))
+                benefits_text.config(state="disabled")
+            
+            # Now create radiobuttons with the function reference
+            for i, level in enumerate(levels):
+                ttk.Radiobutton(fields_frame, text=level, variable=level_var, value=level,
+                            command=update_season_info).grid(row=1, column=1+i, padx=5, pady=10, sticky="w")
+            
+            # Add to cart button
+            add_button = self.create_button(form_frame, text="Add to Cart", 
+                                        command=lambda: self.add_season_membership(season_var.get(), level_var.get()))
+            add_button.pack(pady=20)
+            
+    def add_single_race_ticket(self, race_date, race_name, seat_type):
+        # Add a single race ticket to the cart
+        ticket = SingleRaceTicket(race_date, race_name, seat_type)
+        self.selected_tickets.append(ticket)
+        self.update_selected_tickets()
+        messagebox.showinfo("Success", "Single Race Pass added to cart!")
+    
+    def add_weekend_package(self, weekend_dates, includes_parking):
+        # Add a weekend package ticket to the cart
+        # Extract event name from weekend_dates (e.g., "June 9-11, 2023 (Monaco)" -> "Monaco")
+        event_name = weekend_dates.split("(")[1].split(")")[0] + " Grand Prix"
+        ticket = WeekendPackageTicket(weekend_dates, event_name, includes_parking)
+        self.selected_tickets.append(ticket)
+        self.update_selected_tickets()
+        messagebox.showinfo("Success", "Weekend Package added to cart!")
+    
+    def add_season_membership(self, season_year, membership_level):
+        # Add a season membership ticket to the cart
+        ticket = SeasonMembershipTicket(season_year, membership_level)
+        self.selected_tickets.append(ticket)
+        self.update_selected_tickets()
+        messagebox.showinfo("Success", "Season Membership added to cart!")
+    
+    def update_selected_tickets(self):
+        # Update the cart display with selected tickets
+        
+        # Clear existing display
+        for widget in self.cart_container.winfo_children():
+            widget.destroy()
+        
+        if self.selected_tickets:
+            # Create scrollable frame for tickets
+            canvas = tk.Canvas(self.cart_container, bg="#e6f2ff", highlightthickness=0)
+            scrollbar = ttk.Scrollbar(self.cart_container, orient="vertical", command=canvas.yview)
+            
+            canvas.configure(yscrollcommand=scrollbar.set)
+            canvas.pack(side="left", fill="both", expand=True)
+            scrollbar.pack(side="right", fill="y")
+            
+            tickets_frame = tk.Frame(canvas, bg="#e6f2ff", width=350)
+            canvas_window = canvas.create_window((0, 0), window=tickets_frame, anchor="nw")
+            
+            # Make sure the canvas window expands to the width of the canvas
+            def configure_canvas_window(event):
+                canvas.itemconfig(canvas_window, width=event.width)
+            
+            canvas.bind('<Configure>', configure_canvas_window)
+            
+            # Update scroll region when the tickets frame changes size
+            tickets_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+            
+            # Display each ticket
+            for i, ticket in enumerate(self.selected_tickets):
+                ticket_frame = tk.Frame(tickets_frame, bg="#d6e9ff", padx=10, pady=10)
+                ticket_frame.pack(fill="x", pady=5)
+                
+                # Ticket name and price
+                top_frame = tk.Frame(ticket_frame, bg="#d6e9ff")
+                top_frame.pack(fill="x")
+                
+                tk.Label(top_frame, text=ticket.name, font=self.text_font, bg="#d6e9ff").pack(side="left")
+                tk.Label(top_frame, text="$" + str(ticket.get_price()), 
+                    font=self.text_font, bg="#d6e9ff").pack(side="right")
+                
+                # Ticket description
+                tk.Label(ticket_frame, text=ticket.description, font=self.text_font, bg="#d6e9ff").pack(anchor="w")
+                
+                # Remove button
+                remove_button = tk.Button(ticket_frame, text="Remove", font=self.button_font,
+                                    bg="#ff6666", fg="white", padx=5, pady=2,
+                                    command=lambda idx=i: self.remove_ticket(idx))
+                remove_button.pack(anchor="e")
+            
+            # Calculate and display total
+            total_frame = tk.Frame(self.cart_container, bg="#e6f2ff", pady=10)
+            total_frame.pack(fill="x", side="bottom")
+            
+            total = sum(ticket.get_price() for ticket in self.selected_tickets)
+            
+            tk.Label(total_frame, text="Total:", font=self.subtitle_font, bg="#e6f2ff").pack(side="left")
+            tk.Label(total_frame, text="$" + str(total), font=self.subtitle_font, bg="#e6f2ff").pack(side="right")
+            
+            # Enable checkout button
+            self.checkout_button.config(state="normal")
+        else:
+            # No tickets selected
+            no_tickets_frame = tk.Frame(self.cart_container, bg="#e6f2ff", padx=10, pady=10)
+            no_tickets_frame.pack(fill="both", expand=True)
+            
+            tk.Label(no_tickets_frame, text="Your cart is empty.\nSelect tickets to add them here.", 
+                   font=self.text_font, bg="#e6f2ff", justify="center").pack(expand=True)
+            
+            # Disable checkout button
+            self.checkout_button.config(state="disabled")
+    
+    def remove_ticket(self, index):
+        # Remove a ticket from the cart
+        if 0 <= index < len(self.selected_tickets):
+            del self.selected_tickets[index]
+            self.update_selected_tickets()
+    
+    def checkout(self):
+        # Proceed to checkout
+        if self.selected_tickets:
+            # Store tickets in controller for payment frame
+            self.controller.payment_frame.set_tickets(self.selected_tickets)
+            
+            # Show payment frame
+            self.controller.show_frame(self.controller.payment_frame)
+        else:
+            messagebox.showinfo("Info", "Please select at least one ticket first.")
+    
+    def reset_form(self):
+        # Reset the form
+        self.selected_tickets = []
+        self.update_selected_tickets()
+        
+        # Clear ticket details
+        for widget in self.ticket_details_frame.winfo_children():
+            widget.destroy()
+    
+    def back_to_dashboard(self):
+        # Navigate back to dashboard
+        self.controller.user_dashboard.update_dashboard()
+        self.controller.show_frame(self.controller.user_dashboard)
+
+class PaymentFrame(BaseFrame):
+    # Payment frame class
+    
+    def __init__(self, parent, controller):
+        # Initialize the payment frame
+        super().__init__(parent, controller)
+        
+        # Initialize tickets
+        self.tickets = []
+        
+        # Create header
+        self.header_frame = self.create_header("Payment")
+        
+        # Create back button in header
+        self.back_button = self.create_button(self.header_frame, text="Back to Tickets", 
+                                            command=self.back_to_tickets)
+        self.back_button.pack(side="left", padx=20)
+        
+        # Create main container with two columns
+        self.main_container = tk.Frame(self, bg="#e6f2ff")
+        self.main_container.pack(fill="both", expand=True, padx=20, pady=10)
+        
+        # Create left column (60% width)
+        self.left_column = tk.Frame(self.main_container, bg="#e6f2ff")
+        self.left_column.pack(side="left", fill="both", expand=True)
+        
+        # Create right column (40% width)
+        self.right_column = tk.Frame(self.main_container, bg="#e6f2ff", width=400)
+        self.right_column.pack(side="right", fill="y", padx=(20, 0))
+        self.right_column.pack_propagate(False)  # Prevent shrinking
+        
+        # Set up the order summary in right column
+        self.setup_order_summary()
+        
+        # Set up payment method selection in left column
+        self.setup_payment_method()
+        
+        # Set up discount code in right column (bottom)
+        self.setup_discount_code()
+        
+        # Create submit button in left column (bottom)
+        self.submit_button = self.create_button(self.left_column, text="Complete Purchase", 
+                                             command=self.process_payment)
+        self.submit_button.pack(pady=20, fill="x", side="bottom")
+    
+    def setup_order_summary(self):
+        # Create order summary in right column
+        summary_frame = tk.LabelFrame(self.right_column, text="Order Summary", 
+                                   font=self.subtitle_font, bg="#e6f2ff", padx=15, pady=15)
+        summary_frame.pack(fill="x", pady=(0, 20))
+        
+        # Create scrollable frame for tickets
+        self.summary_container = tk.Frame(summary_frame, bg="#e6f2ff")
+        self.summary_container.pack(fill="both", expand=True)
+        
+        # Will be populated in update_order_summary
+    
+    def update_order_summary(self):
+        # Update the order summary with ticket information
+        # Clear existing content
+        for widget in self.summary_container.winfo_children():
+            widget.destroy()
+        
+        # Create a canvas for scrolling if needed
+        canvas = tk.Canvas(self.summary_container, bg="#e6f2ff", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.summary_container, orient="vertical", command=canvas.yview)
+        
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Create a frame in the canvas to hold ticket items
+        tickets_frame = tk.Frame(canvas, bg="#e6f2ff")
+        canvas.create_window((0, 0), window=tickets_frame, anchor="nw")
+        
+        # Update scrolling when content changes
+        tickets_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        
+        # Display each ticket with clear formatting
+        row = 0
+        for ticket in self.tickets:
+            # Create a frame for each ticket with subtle background
+            ticket_frame = tk.Frame(tickets_frame, bg="#d6e9ff", padx=5, pady=5)
+            ticket_frame.pack(fill="x", pady=3)
+            
+            # Display ticket name (left-aligned)
+            tk.Label(ticket_frame, text=ticket.name, 
+                   font=self.text_font, bg="#d6e9ff", anchor="w").pack(side="left")
+            
+            # Display price (right-aligned)
+            tk.Label(ticket_frame, text="$" + str(ticket.get_price()), 
+                   font=self.text_font, bg="#d6e9ff").pack(side="right")
+        
+        # Calculate subtotal
+        self.subtotal = sum(ticket.get_price() for ticket in self.tickets)
+        
+        # Create summary details at the bottom
+        summary_details = tk.Frame(self.summary_container, bg="#e6f2ff", pady=10)
+        summary_details.pack(fill="x", side="bottom")
+        
+        # Subtotal row
+        subtotal_frame = tk.Frame(summary_details, bg="#e6f2ff")
+        subtotal_frame.pack(fill="x", pady=2)
+        
+        tk.Label(subtotal_frame, text="Subtotal:", font=self.text_font, bg="#e6f2ff").pack(side="left")
+        self.subtotal_label = tk.Label(subtotal_frame, text="$" + str(self.subtotal), 
+                                     font=self.text_font, bg="#e6f2ff")
+        self.subtotal_label.pack(side="right")
+        
+        # Discount row
+        discount_frame = tk.Frame(summary_details, bg="#e6f2ff")
+        discount_frame.pack(fill="x", pady=2)
+        
+        tk.Label(discount_frame, text="Discount:", font=self.text_font, bg="#e6f2ff").pack(side="left")
+        self.discount_label = tk.Label(discount_frame, text="-$0", font=self.text_font, bg="#e6f2ff")
+        self.discount_label.pack(side="right")
+        
+        # Total row highlighted
+        total_frame = tk.Frame(summary_details, bg="#e6f2ff", pady=5)
+        total_frame.pack(fill="x", pady=5)
+        
+        tk.Label(total_frame, text="Total:", font=self.subtitle_font, bg="#e6f2ff").pack(side="left")
+        self.total_label = tk.Label(total_frame, text="$" + str(self.subtotal), 
+                                  font=self.subtitle_font, bg="#e6f2ff")
+        self.total_label.pack(side="right")
+        
+        # Initialize discount amount
+        self.discount_amount = 0
+    
+    def setup_payment_method(self):
+        # Payment method selection section
+        payment_method_frame = tk.LabelFrame(self.left_column, text="Payment Method", 
+                                          font=self.subtitle_font, bg="#e6f2ff", padx=15, pady=15)
+        payment_method_frame.pack(fill="x", pady=(0, 20))
+        
+        # Initialize payment method selection
+        self.payment_method = tk.StringVar(value="credit_card")
+        
+        # Create radio buttons in a row
+        methods_frame = tk.Frame(payment_method_frame, bg="#e6f2ff")
+        methods_frame.pack(pady=10)
+        
+        # Credit Card option with icon placeholder
+        credit_frame = tk.Frame(methods_frame, bg="#e6f2ff")
+        credit_frame.pack(side="left", padx=20)
+        
+        ttk.Radiobutton(credit_frame, text="Credit Card", variable=self.payment_method, 
+                      value="credit_card", command=lambda: self.show_payment_details("credit_card")).pack(anchor="w")
+        
+        # Digital Wallet option with icon placeholder
+        wallet_frame = tk.Frame(methods_frame, bg="#e6f2ff")
+        wallet_frame.pack(side="left", padx=20)
+        
+        ttk.Radiobutton(wallet_frame, text="Digital Wallet", variable=self.payment_method,
+                      value="digital_wallet", command=lambda: self.show_payment_details("digital_wallet")).pack(anchor="w")
+        
+        # Create payment details container (will be populated based on selection)
+        self.payment_details_frame = tk.Frame(self.left_column, bg="#e6f2ff", padx=15, pady=15)
+        self.payment_details_frame.pack(fill="x")
+    
+    def show_payment_details(self, method):
+        # Show payment details form based on selected method
+        
+        # Clear existing form
+        for widget in self.payment_details_frame.winfo_children():
+            widget.destroy()
+        
+        # Create a bordered container for payment details
+        details_container = tk.LabelFrame(self.payment_details_frame, text="Payment Details", 
+                                       font=self.subtitle_font, bg="#e6f2ff", padx=15, pady=15)
+        details_container.pack(fill="x")
+        
+        if method == "credit_card":
+            # Credit card payment form with two-column grid
+            details_grid = tk.Frame(details_container, bg="#e6f2ff")
+            details_grid.pack(fill="x", padx=20, pady=10)
+            
+            # Card number
+            tk.Label(details_grid, text="Card Number:", font=self.text_font, bg="#e6f2ff", 
+                   anchor="e", width=20).grid(row=0, column=0, padx=10, pady=10, sticky="e")
+            self.card_number = self.create_entry(details_grid, width=25)
+            self.card_number.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+            
+            # Expiry date
+            tk.Label(details_grid, text="Expiry Date (MM/YY):", font=self.text_font, bg="#e6f2ff",
+                   anchor="e", width=20).grid(row=1, column=0, padx=10, pady=10, sticky="e")
+            self.expiry_date = self.create_entry(details_grid, width=10)
+            self.expiry_date.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+            
+            # CVV
+            tk.Label(details_grid, text="CVV:", font=self.text_font, bg="#e6f2ff",
+                   anchor="e", width=20).grid(row=2, column=0, padx=10, pady=10, sticky="e")
+            self.cvv = self.create_entry(details_grid, width=5, show="*")
+            self.cvv.grid(row=2, column=1, padx=10, pady=10, sticky="w")
+            
+            # Cardholder name
+            tk.Label(details_grid, text="Cardholder Name:", font=self.text_font, bg="#e6f2ff",
+                   anchor="e", width=20).grid(row=3, column=0, padx=10, pady=10, sticky="e")
+            self.cardholder_name = self.create_entry(details_grid, width=25)
+            self.cardholder_name.grid(row=3, column=1, padx=10, pady=10, sticky="w")
+            
+        elif method == "digital_wallet":
+            # Digital wallet payment form with two-column grid
+            details_grid = tk.Frame(details_container, bg="#e6f2ff")
+            details_grid.pack(fill="x", padx=20, pady=10)
+            
+            # Wallet type
+            tk.Label(details_grid, text="Wallet Type:", font=self.text_font, bg="#e6f2ff",
+                   anchor="e", width=15).grid(row=0, column=0, padx=10, pady=10, sticky="e")
+            
+            wallet_types = ["PayPal", "Apple Pay", "Google Pay"]
+            self.wallet_type = tk.StringVar(value=wallet_types[0])
+            wallet_menu = ttk.Combobox(details_grid, textvariable=self.wallet_type, 
+                                     values=wallet_types, state="readonly", width=15)
+            wallet_menu.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+            
+            # Wallet ID (email/phone)
+            tk.Label(details_grid, text="Email/Phone:", font=self.text_font, bg="#e6f2ff",
+                   anchor="e", width=15).grid(row=1, column=0, padx=10, pady=10, sticky="e")
+            self.wallet_id = self.create_entry(details_grid, width=25)
+            self.wallet_id.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+    
+    def setup_discount_code(self):
+        # Create discount code section
+        discount_frame = tk.LabelFrame(self.right_column, text="Discount Code", 
+                                    font=self.subtitle_font, bg="#e6f2ff", padx=15, pady=15)
+        discount_frame.pack(fill="x", side="bottom", pady=(20, 0))
+        
+        # Create a container for code entry and button
+        code_container = tk.Frame(discount_frame, bg="#e6f2ff", pady=10)
+        code_container.pack(fill="x")
+        
+        # Create entry field
+        self.discount_code = self.create_entry(code_container, width=20)
+        self.discount_code.pack(side="left", padx=5)
+        
+        # Create apply button
+        apply_button = self.create_button(code_container, text="Apply", command=self.apply_discount)
+        apply_button.pack(side="left", padx=5)
+    
+    def set_tickets(self, tickets):
+        # Set the tickets for payment and update the order summary
+        self.tickets = tickets
+        self.update_order_summary()
+        self.show_payment_details(self.payment_method.get())
+    
+    def apply_discount(self):
+        # Apply a discount code
+        code = self.discount_code.get().upper()
+        
+        if not code:
+            messagebox.showinfo("Info", "Please enter a discount code.")
+            return
+        
+        # Check if code is valid
+        if self.controller.db.is_valid_discount(code):
+            # Get discount percentage
+            percentage = self.controller.db.get_discount_percentage(code)
+            
+            # Calculate discount amount
+            self.discount_amount = (percentage / 100) * self.subtotal
+            
+            # Update labels
+            self.discount_label.config(text="-$" + str(self.discount_amount))
+            self.total_label.config(text="$" + str(self.subtotal - self.discount_amount))
+            
+            # Store code for later
+            self.applied_code = code
+            
+            messagebox.showinfo("Success", "Discount code applied successfully!")
+        else:
+            messagebox.showerror("Error", "Invalid or inactive discount code.")
+            
+            # Reset discount
+            self.discount_amount = 0
+            self.discount_label.config(text="-$0")
+            self.total_label.config(text="$" + str(self.subtotal))
+            self.applied_code = None
+    
+    def process_payment(self):
+        # Process the payment
+        
+        # Validate payment details
+        payment_method = self.payment_method.get()
+        
+        if payment_method == "credit_card":
+            # Validate credit card details
+            card_number = self.card_number.get()
+            expiry_date = self.expiry_date.get()
+            cvv = self.cvv.get()
+            cardholder_name = self.cardholder_name.get()
+            
+            if not card_number or not expiry_date or not cvv or not cardholder_name:
+                messagebox.showerror("Error", "All payment fields are required!")
+                return
+            
+            # Create payment object
+            payment = CreditCardPayment(self.subtotal - self.discount_amount, card_number, expiry_date, cvv)
+            
+        elif payment_method == "digital_wallet":
+            # Validate digital wallet details
+            wallet_type = self.wallet_type.get()
+            wallet_id = self.wallet_id.get()
+            
+            if not wallet_id:
+                messagebox.showerror("Error", "Email/Phone is required!")
+                return
+            
+            # Create payment object
+            payment = DigitalWalletPayment(self.subtotal - self.discount_amount, wallet_type, wallet_id)
+        
+        # Create purchase order
+        discount_code = getattr(self, 'applied_code', None)
+        order = PurchaseOrder(self.controller.current_user, self.tickets, payment, 
+                             discount_code, self.discount_amount)
+        
+        # Process payment and confirm order
+        if order.confirm_order():
+            # Add purchase to user's history
+            self.controller.current_user.add_purchase(order)
+            
+            # Update user in database
+            self.controller.db.update_user(self.controller.current_user)
+            
+            # Record sale in database
+            sale = {
+                "username": self.controller.current_user.username,
+                "order_id": order.order_id,
+                "tickets": [{"name": t.name, "price": t.get_price()} for t in self.tickets],
+                "total": order.get_order_total(),
+                "date": datetime.now()
+            }
+            self.controller.db.add_sale(sale)
+            
+            # Show success message
+            messagebox.showinfo("Success", "Payment processed successfully! Your order has been confirmed.")
+            
+            # Reset form and go back to dashboard
+            self.tickets = []
+            self.back_to_dashboard()
+        else:
+            messagebox.showerror("Error", "Payment processing failed! Please try again.")
+    
+    def back_to_tickets(self):
+        # Navigate back to ticket purchase
+        self.controller.show_frame(self.controller.ticket_purchase)
+    
+    def back_to_dashboard(self):
+        # Navigate back to dashboard
+        self.controller.user_dashboard.update_dashboard()
+        self.controller.show_frame(self.controller.user_dashboard)
+class ProfileFrame(BaseFrame):
+    # User profile frame class
+    
+    def __init__(self, parent, controller):
+        # Initialize the profile frame
+        super().__init__(parent, controller)
+        
+        # Create header
+        self.header_frame = self.create_header("My Profile")
+        
+        # Create back button in header
+        self.back_button = self.create_button(self.header_frame, text="Back to Dashboard", 
+                                            command=self.back_to_dashboard)
+        self.back_button.pack(side="left", padx=20)
+        
+        # Create main content frame
+        self.content_frame = tk.Frame(self, bg="#e6f2ff", padx=20, pady=20)
+        self.content_frame.pack(fill="both", expand=True)
+        
+        # Create profile form
+        self.create_profile_form()
+    
+    def create_profile_form(self):
+        # Create the profile form
+        
+        # Create form frame
+        form_frame = tk.Frame(self.content_frame, bg="#d6e9ff", padx=20, pady=20)
+        form_frame.pack(fill="x")
+        
+        # Username (read-only)
+        tk.Label(form_frame, text="Username:", font=self.text_font, bg="#d6e9ff").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        self.username_label = tk.Label(form_frame, text="", font=self.text_font, bg="#d6e9ff")
+        self.username_label.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        
+        # Name
+        tk.Label(form_frame, text="Full Name:", font=self.text_font, bg="#d6e9ff").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+        self.name_entry = self.create_entry(form_frame, width=30)
+        self.name_entry.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+        
+        # Email
+        tk.Label(form_frame, text="Email:", font=self.text_font, bg="#d6e9ff").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+        self.email_entry = self.create_entry(form_frame, width=30)
+        self.email_entry.grid(row=2, column=1, padx=10, pady=10, sticky="w")
+        
+        # Phone
+        tk.Label(form_frame, text="Phone:", font=self.text_font, bg="#d6e9ff").grid(row=3, column=0, padx=10, pady=10, sticky="e")
+        self.phone_entry = self.create_entry(form_frame, width=30)
+        self.phone_entry.grid(row=3, column=1, padx=10, pady=10, sticky="w")
+        
+        # Account type (read-only)
+        tk.Label(form_frame, text="Account Type:", font=self.text_font, bg="#d6e9ff").grid(row=4, column=0, padx=10, pady=10, sticky="e")
+        self.account_type_label = tk.Label(form_frame, text="", font=self.text_font, bg="#d6e9ff")
+        self.account_type_label.grid(row=4, column=1, padx=10, pady=10, sticky="w")
+        
+        # Created date (read-only)
+        tk.Label(form_frame, text="Created On:", font=self.text_font, bg="#d6e9ff").grid(row=5, column=0, padx=10, pady=10, sticky="e")
+        self.created_date_label = tk.Label(form_frame, text="", font=self.text_font, bg="#d6e9ff")
+        self.created_date_label.grid(row=5, column=1, padx=10, pady=10, sticky="w")
+        
+        # Buttons
+        button_frame = tk.Frame(self.content_frame, bg="#e6f2ff", pady=20)
+        button_frame.pack()
+        
+        # Update profile button
+        update_button = self.create_button(button_frame, text="Update Profile", command=self.update_profile)
+        update_button.pack(side="left", padx=10)
+        
+        # Change password button
+        password_button = self.create_button(button_frame, text="Change Password", command=self.change_password)
+        password_button.pack(side="left", padx=10)
+    
+    def load_profile(self):
+        # Load profile data
+        if self.controller.current_user:
+            user = self.controller.current_user
+            
+            # Set values
+            self.username_label.config(text=user.username)
+            self.name_entry.delete(0, tk.END)
+            self.name_entry.insert(0, user.name)
+            self.email_entry.delete(0, tk.END)
+            self.email_entry.insert(0, user.email)
+            self.phone_entry.delete(0, tk.END)
+            self.phone_entry.insert(0, user.phone)
+            
+            # Account type
+            account_type = "Admin" if isinstance(user, AdminUser) else "Regular User"
+            self.account_type_label.config(text=account_type)
+            
+            # Created date
+            created_date = user.created_at.strftime("%Y-%m-%d")
+            self.created_date_label.config(text=created_date)
+    
+    def update_profile(self):
+        # Update the user's profile
+        
+        # Get form data
+        name = self.name_entry.get()
+        email = self.email_entry.get()
+        phone = self.phone_entry.get()
+        
+        # Validate inputs
+        if not name or not email or not phone:
+            messagebox.showerror("Error", "All fields are required!")
+            return
+        
+        # Update profile
+        if self.controller.update_user_profile(name, email, phone):
+            messagebox.showinfo("Success", "Profile updated successfully!")
+        else:
+            messagebox.showerror("Error", "Failed to update profile!")
+    
+    def change_password(self):
+        
+        # Create a dialog window
+        dialog = tk.Toplevel(self.controller)
+        dialog.title("Change Password")
+        dialog.geometry("350x200")
+        dialog.configure(bg="#e6f2ff")
+        dialog.grab_set()  # Make window modal
+        
+        # Create form
+        form_frame = tk.Frame(dialog, bg="#e6f2ff", padx=20, pady=20)
+        form_frame.pack(fill="both", expand=True)
+        
+        # Current password
+        tk.Label(form_frame, text="Current Password:", font=self.text_font, bg="#e6f2ff").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        current_password = tk.Entry(form_frame, font=self.text_font, show="*")
+        current_password.grid(row=0, column=1, padx=10, pady=10, sticky="w")
+        
+        # New password
+        tk.Label(form_frame, text="New Password:", font=self.text_font, bg="#e6f2ff").grid(row=1, column=0, padx=10, pady=10, sticky="e")
+        new_password = tk.Entry(form_frame, font=self.text_font, show="*")
+        new_password.grid(row=1, column=1, padx=10, pady=10, sticky="w")
+        
+        # Confirm new password
+        tk.Label(form_frame, text="Confirm Password:", font=self.text_font, bg="#e6f2ff").grid(row=2, column=0, padx=10, pady=10, sticky="e")
+        confirm_password = tk.Entry(form_frame, font=self.text_font, show="*")
+        confirm_password.grid(row=2, column=1, padx=10, pady=10, sticky="w")
+        
+        # Buttons
+        button_frame = tk.Frame(dialog, bg="#e6f2ff", pady=10)
+        button_frame.pack(fill="x")
+        
+        def save_password():
+            # Get form data
+            current = current_password.get()
+            new = new_password.get()
+            confirm = confirm_password.get()
+            
+            # Validate inputs
+            if not current or not new or not confirm:
+                messagebox.showerror("Error", "All fields are required!", parent=dialog)
+                return
+            
+            # Check current password
+            if current != self.controller.current_user.password:
+                messagebox.showerror("Error", "Current password is incorrect!", parent=dialog)
+                return
+            
+            # Check new passwords match
+            if new != confirm:
+                messagebox.showerror("Error", "New passwords do not match!", parent=dialog)
+                return
+            
+            # Update password
+            self.controller.current_user.password = new
+            
+            # Update in database
+            self.controller.db.update_user(self.controller.current_user)
+            
+            messagebox.showinfo("Success", "Password changed successfully!", parent=dialog)
+            dialog.destroy()
+        
+        # Save button
+        save_button = tk.Button(button_frame, text="Save", font=self.button_font,
+                             bg="#4da6ff", fg="white", padx=10, pady=5,
+                             command=save_password)
+        save_button.pack(side="left", padx=10)
+        
+        # Cancel button
+        cancel_button = tk.Button(button_frame, text="Cancel", font=self.button_font,
+                               bg="#f0f0f0", fg="black", padx=10, pady=5,
+                               command=dialog.destroy)
+        cancel_button.pack(side="left", padx=10)
+    
+    def back_to_dashboard(self):
+        # Navigate back to dashboard
+        self.controller.user_dashboard.update_dashboard()
+        self.controller.show_frame(self.controller.user_dashboard)
